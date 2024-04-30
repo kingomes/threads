@@ -8,10 +8,9 @@ using namespace std;
 
 mutex mtx; // declare mutex
 condition_variable cv; // declare condition variable
-const int n = 5;
-const int m = 4;
+const int n = 10;
 int counter = 0;
-int numListeners = n;
+int numListeners = 1;
 
 
 struct requestStructure {
@@ -28,10 +27,10 @@ queue<requestStructure> msg_queue;
 string webPages[10] = {"google.com", "yahoo.com", "youtube.com", "amazon.com", "twitch.tv", "loyno.edu",
                         "totaljerkface.com", "spotify.com", "aol.com", "friv.com"};
 
-void listen(int thread_id) {
+void listen() {
 	srand(time(NULL));
 	
-	for (int i = 0; i < 6; i++) {
+	for (int i = 0; i < 5; i++) {
 		int timeToSleep = rand() % 3 + 1;
 	    this_thread::sleep_for(chrono::seconds(timeToSleep));
 	    {
@@ -48,15 +47,23 @@ void listen(int thread_id) {
 		    msg_queue.push(request);
 			cout << "Listener: pushes request no. " << request.request_id << endl;
 			lck.unlock();
-		}  
+		}
     	cv.notify_one(); // notify waiting threads
 	}
+	cout << "Listener: numListeners: " << numListeners << endl;
 	numListeners--;
 }
+
 void do_request(int thread_id) {
 	while (true) {
 		unique_lock<mutex> lck(mtx);
-	    if (msg_queue.empty()) cv.wait(lck);
+	    if (msg_queue.empty()) {
+	    	if (numListeners == 0) {
+				cout << "Request: " << thread_id << " Exiting\n";
+				break;
+			}
+	    	cv.wait(lck);
+		}
 	    int request_id = msg_queue.front().request_id;
 		cout << "Request: retrieving request number: " << request_id << endl;
 	    string page_requested = msg_queue.front().page_requested;
@@ -64,26 +71,17 @@ void do_request(int thread_id) {
 	    cout << "thread " << thread_id << " completed request " << request_id << " requesting webpage " << page_requested << endl;
 	    lck.unlock();
 		cout << "Request: numListeners: " << numListeners << endl;
-		if (numListeners == 0 && msg_queue.empty()) {
-			cout << "Request: " << thread_id << " Exiting\n";
-			break;
-		}
 	}
 }
 
 int main() {
-	int k = n;
-	if (m>n) k = m;
-	thread listener[n];
-	thread requests[m];
-	for (int i = 0; i < k; i++) {
-		if (i<n)
-			listener[i] = thread(listen, i);
-		if (i<m)
-			requests[i] = thread(do_request, i);
+	thread listener = thread(listen);
+	listener.join();
+	thread requests[n];
+	for (int i = 0; i < n; i++) {
+		requests[i] = thread(do_request, i);
 	}
-	for (int i = 0; i < k; i++) {
-		listener[i].join();
+	for (int i = 0; i < n; i++) {
 		requests[i].join();
 	}
 }
